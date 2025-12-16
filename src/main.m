@@ -13,23 +13,31 @@ disp("Robot connected");
 touch = touchSensor(robot);
 gyrosensor = gyroSensor(robot);
 balanceMotor=motor(robot, 'A');
-motorLeft = motor(robot, 'C');
-motorRight = motor(robot, 'B');
+frontDriveMotor = motor(robot, 'D');
+backDriveMotor= motor(robot, 'C');
 
 radius=56/2;
-DRIVE_SPEED_LEFT=20;
-DRIVE_SPEED_RIGHT=DRIVE_SPEED_LEFT+0;
-MAX_SPEED=40;
+DRIVE_SPEED_FRONT=15;
+MAX_SPEED=100;
+acceleration=0.4;
+SPEED_DIFF=0;
+DRIVE_SPEED_BACK=DRIVE_SPEED_FRONT+SPEED_DIFF;
+currentSpeed=DRIVE_SPEED_FRONT;
+
 
 while is_running
     switch state
         case robot_states.INIT
             distance=0;
+            balanceMotorSpeeds=[];
+            xs=[];
+            i=1;
             tic;
-            resetRotation(motorLeft);
-            resetRotation(motorRight);
-            motorLeft.Speed = DRIVE_SPEED_LEFT;
-            motorRight.Speed = DRIVE_SPEED_RIGHT;
+            resetRotation(frontDriveMotor);
+            resetRotation(backDriveMotor);
+            frontDriveMotor.Speed = DRIVE_SPEED_FRONT;
+            backDriveMotor.Speed=-DRIVE_SPEED_BACK;
+            currentSpeed=DRIVE_SPEED_FRONT;
             balanceMotor.Speed=0;
             writeStatusLight(robot, 'orange', 'solid'); % maybe dont write 
 
@@ -43,35 +51,40 @@ while is_running
                 resetRotationAngle(gyrosensor);
                 resetRotation(balanceMotor);
 
-                start(motorLeft);
-                start(motorRight);
+                start(frontDriveMotor);
+                start(backDriveMotor);
                 start(balanceMotor);
                 disp("started motors");
                 state=robot_states.DRIVING;
                 pause(1);
             end
         case robot_states.DRIVING
-            motorRotation = readRotation(motorRight);
+            motorRotation = readRotation(frontDriveMotor);
             distance=motorRotation * ((2*pi*radius)/360);
 
             if(readTouch(touch)==1)
                 state=robot_states.FINAL;
             else
-                if motorLeft.Speed < MAX_SPEED
-                    motorLeft.Speed=motorLeft.Speed+0.2;
+                if frontDriveMotor.Speed < MAX_SPEED
+                    currentSpeed=double(currentSpeed+acceleration);
+                    frontDriveMotor.Speed=currentSpeed;
                 end
-                if motorRight.Speed < MAX_SPEED
-                    motorRight.Speed=motorRight.Speed+0.2;
+                if abs(backDriveMotor.Speed) < MAX_SPEED+SPEED_DIFF;
+                    backDriveMotor.Speed=-(currentSpeed+SPEED_DIFF);
                 end
             end
 
-            angle=double(readRotationAngle(gyrosensor));
-    balanceMotorRotation=readRotation(balanceMotor) / double(1.6666666); % uebersetzung von Zahnrad
-    
-    magicNumber=4.6;
-    angleSum = double(-magicNumber) * double(balanceMotorRotation-angle);
+    angle=double(-readRotationAngle(gyrosensor));
+    balanceMotorRotation=readRotation(balanceMotor) / double(5.0); % uebersetzung von Zahnrad
+
+    speedFactor=double(-0.01*double(frontDriveMotor.Speed-20)+1);
+    kP=double(4.6 * speedFactor); % 4.6 is a tested value for speed = 20, so the multiplier there should begin at 1, getting higher for higher speed
+    angleSum = double(-kP) * double(balanceMotorRotation-angle);
 
     balanceMotor.Speed=angleSum;
+    xs(end+1)=i;
+    balanceMotorSpeeds(end+1)=angleSum;
+    i=i+1;
     
         case robot_states.FINAL
             writeStatusLight(robot, 'red', 'solid');
@@ -79,8 +92,8 @@ while is_running
             
             disp("stopping motors");
             stop(balanceMotor);
-            stop(motorRight);
-            stop(motorLeft);
+            stop(frontDriveMotor);
+            stop(backDriveMotor);
     
             distance=double(distance)/double(1000);  % mm to metres
             time=toc;
@@ -89,6 +102,12 @@ while is_running
             disp(msg);
             clearLCD(robot);
             writeLCD(robot, msg, 1, 1);
+
+            figure(1);
+            plot(xs, balanceMotorSpeeds);
+            hold on;
+            grid on;
+
             pause(1);
 
             % is_running=0;
