@@ -15,7 +15,9 @@ gyrosensor = gyroSensor(robot);
 balanceMotor=motor(robot, 'A');
 frontDriveMotor = motor(robot, 'C');
 backDriveMotor= motor(robot, 'D');
+schallsensor = sonicSensor(robot);
 
+MIN_DISTANCE=0.2;
 radius=56/2;
 DRIVE_SPEED_FRONT=30;
 MAX_ROTATIONS=20;
@@ -24,11 +26,26 @@ DRIVE_SPEED_BACK=DRIVE_SPEED_FRONT*1.6666;
 currentSpeedFront=DRIVE_SPEED_FRONT;
 currentSpeedBack=DRIVE_SPEED_BACK;
 ROTATION_DEADZONE=5;
+DECELERATION=3;
+direction=1;  %1=forward, -1 =backwards
 
 frontRotations=[];
 backRotations=[];
 frontSpeeds=[];
 backSpeeds=[];
+
+disp("waiting for robot to initialize...");
+resetRotationAngle(gyrosensor);
+pause(2);
+if(abs(readRotationAngle(gyrosensor))>2)
+    beep(robot, 3);
+    error("gyrosensor seems to drift!!!");                  
+end
+
+resetRotation(balanceMotor);
+balanceMotor.Speed=0;
+start(balanceMotor);
+
 
 while is_running
     switch state
@@ -42,11 +59,10 @@ while is_running
             xs=[];
             i=1;
             tic;
-            frontDriveMotor.Speed = DRIVE_SPEED_FRONT;
-            backDriveMotor.Speed=-DRIVE_SPEED_BACK;
+            frontDriveMotor.Speed = direction*DRIVE_SPEED_FRONT;
+            backDriveMotor.Speed=-direction*DRIVE_SPEED_BACK;
             currentSpeedFront=DRIVE_SPEED_FRONT;
             currentSpeedBack=DRIVE_SPEED_BACK;
-            balanceMotor.Speed=0;
             writeStatusLight(robot, 'orange', 'solid'); % maybe dont write 
 
             disp("robot initialized... waiting for start command via touch sensor");
@@ -56,17 +72,17 @@ while is_running
                 writeStatusLight(robot, 'green', 'solid');
                 playTone(robot, 500, 1, 10);
 
-                resetRotationAngle(gyrosensor);
-                resetRotation(balanceMotor);
+                
+                
+                pause(1);
 
                 resetRotation(frontDriveMotor);
                 resetRotation(backDriveMotor);
                 start(frontDriveMotor);
                 start(backDriveMotor);
-                start(balanceMotor);
                 disp("started motors");
                 state=robot_states.DRIVING;
-                pause(1);
+                
             end
         case robot_states.DRIVING
             motorRotation = readRotation(frontDriveMotor);
@@ -75,53 +91,82 @@ while is_running
             if(readTouch(touch)==1)
                 state=robot_states.FINAL;
             end
+            sonicDistance = readDistance(schallsensor);
+            if(direction==1 && sonicDistance<MIN_DISTANCE)  % sonic Sensor only relevant if direction forward
+                state=robot_states.BLOCKED;
+            end
+        
+            %start for plotting
+            xs(end+1)=i;
+            balanceMotorSpeeds(end+1)=balanceMotor.Speed;
+            frontSpeeds(end+1)=frontDriveMotor.Speed;
+            backSpeeds(end+1)=-backDriveMotor.Speed;
+            
+            frontRotations(end+1)=readRotation(frontDriveMotor)-sum(frontRotations);  % subtract last value because we want not the aggregated rotations
+            backRotations(end+1)=(-readRotation(backDriveMotor)-sum(backRotations))/1.6666;
+            
+            i=i+1;
+            %end for plotting
+        
+            if frontRotations(end) < MAX_ROTATIONS
+                currentSpeedFront=double(currentSpeedFront+acceleration);
+                frontDriveMotor.Speed=direction*currentSpeedFront;
+            elseif frontRotations > MAX_ROTATIONS+ROTATION_DEADZONE    % some deadzone to avoid flipping between two states
+                currentSpeedFront=double(currentSpeedFront-acceleration);
+                frontDriveMotor.Speed=direction*currentSpeedFront;
+            end
+            if backRotations(end) < MAX_ROTATIONS*1.666
+                currentSpeedBack=double(currentSpeedBack+acceleration);
+                backDriveMotor.Speed=-direction * currentSpeedBack;
+            elseif backRotations(end) > MAX_ROTATIONS*1.666+ROTATION_DEADZONE % some deadzone to avoid flipping between two states
+                currentSpeedBack=double(currentSpeedBack-acceleration);
+                backDriveMotor.Speed=-direction*currentSpeedBack;
+            end
 
-    angle=double(-readRotationAngle(gyrosensor));
-    balanceMotorRotationRaw=readRotation(balanceMotor);
-    balanceMotorRotation=balanceMotorRotationRaw / double(5.0); % uebersetzung von Zahnrad
+        case robot_states.BLOCKED
+            writeStatusLight(robot, 'red', 'pulsing');
+            
+            while readDistance(schallsensor)< MIN_DISTANCE && (abs(frontDriveMotor.Speed)>DECELERATION && abs(backDriveMotor.Speed)>DECELERATION)
+                frontDriveMotor.Speed=sign(frontDriveMotor.Speed)* (abs(frontDriveMotor.Speed)-DECELERATION);
+                backDriveMotor.Speed=sign(backDriveMotor.Speed) * (abs(backDriveMotor.Speed)-DECELERATION);
+                balance_regulation(gyrosensor, balanceMotor);
+            end
+                frontDriveMotor.Speed=0;
+                backDriveMotor.Speed=0;
+                
+            
+            sonicDistance = readDistance(schallsensor);
+            if(sonicDistance >= MIN_DISTANCE)
+                writeStatusLight(robot, 'green', 'solid');
+                currentSpeedFront=DRIVE_SPEED_FRONT;
+                currentSpeedBack=DRIVE_SPEED_BACK;
+                frontDriveMotor.Speed=direction*currentSpeedFront;
+                backDriveMotor.Speed=-direction*currentSpeedFront;
+                state=robot_states.DRIVING;
+            else
+                beep(robot, 1);
+            end
 
-   % speedFactor=double(-0.01*double(frontDriveMotor.Speed-20)+1);
-    speedFactor=1;
-    kP=double(4.6 * speedFactor); % 4.6 is a tested value for speed = 20, so the multiplier there should begin at 1, getting higher for higher speed
-    angleSum = double(-kP) * double(balanceMotorRotation-angle);
-
-    balanceMotor.Speed=angleSum;
-
-    %start for plotting
-    xs(end+1)=i;
-    balanceMotorSpeeds(end+1)=angleSum;
-    frontSpeeds(end+1)=frontDriveMotor.Speed;
-    backSpeeds(end+1)=-backDriveMotor.Speed;
-    
-    frontRotations(end+1)=readRotation(frontDriveMotor)-sum(frontRotations);  % subtract last value because we want not the aggregated rotations
-    backRotations(end+1)=(-readRotation(backDriveMotor)-sum(backRotations))/1.6666;
-    
-    i=i+1;
-    %end for plotting
-
-    if frontRotations(end) < MAX_ROTATIONS
-        currentSpeedFront=double(currentSpeedFront+acceleration);
-        frontDriveMotor.Speed=currentSpeedFront;
-    elseif frontRotations > MAX_ROTATIONS+ROTATION_DEADZONE    % some deadzone to avoid flipping between two states
-        currentSpeedFront=double(currentSpeedFront-acceleration);
-        frontDriveMotor.Speed=currentSpeedFront;
-    end
-    if backRotations(end) < MAX_ROTATIONS*1.666
-        currentSpeedBack=double(currentSpeedBack+acceleration);
-        backDriveMotor.Speed=-currentSpeedBack;
-    elseif backRotations(end) > MAX_ROTATIONS*1.666+ROTATION_DEADZONE % some deadzone to avoid flipping between two states
-        currentSpeedBack=double(currentSpeedBack-acceleration);
-        backDriveMotor.Speed=-currentSpeedBack;
-    end
+            if(readTouch(touch)==1)
+                state=robot_states.FINAL;
+            end
 
     
         case robot_states.FINAL
             close all; % close figures
             writeStatusLight(robot, 'red', 'solid');
+            while(abs(frontDriveMotor.Speed)>DECELERATION && abs(backDriveMotor.Speed)>DECELERATION)
+                frontDriveMotor.Speed=sign(frontDriveMotor.Speed)* (abs(frontDriveMotor.Speed)-DECELERATION);
+                backDriveMotor.Speed=sign(backDriveMotor.Speed) * (abs(backDriveMotor.Speed)-DECELERATION);
+                balance_regulation(gyrosensor, balanceMotor);
+            end
+
+
             beep(robot, 1);
+
+            direction=-direction; % switch the direction front/backwards
             
             disp("stopping motors");
-            stop(balanceMotor);
             stop(frontDriveMotor);
             stop(backDriveMotor);
     
@@ -139,7 +184,7 @@ while is_running
             hold on;
             grid on;
 
-             subplot(3,1,2);
+            subplot(3,1,2);
             plot(xs, frontRotations);
             grid on;
             hold on;
@@ -163,5 +208,17 @@ while is_running
             is_running=0;
     end
 
+    taste = readButton(robot, 'down');
+    if(taste==1)
+        disp("Roboter was stopped via down button");
+        is_running=0;
+    end
+        
+        balance_regulation(gyrosensor, balanceMotor);
 
 end
+
+
+stop(balanceMotor);
+stop(frontDriveMotor);
+stop(backDriveMotor);
