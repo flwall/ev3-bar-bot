@@ -1,7 +1,10 @@
-classdef Config
-properties (Constant)
-    DRIVE_SPEED_LEFT=10;
-    DRIVE_SPEED_RIGHT=DRIVE_SPEED_LEFT+0;
-    MAX_SPEED=40;
+classdef Config < handle
+properties (Access=public)
+    minDistance=0.2;
+    acceleration=0.4;
+    maxRotations=20;
+    initialFrontDriveSpeed=30; % initial
+    deceleration=3;
+    direction=1;
 end
 end
