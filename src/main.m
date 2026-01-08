@@ -1,6 +1,16 @@
 clear;
 close all;
 clc;
+
+% CONFIG PARAMETERS
+DRIVE_SPEED_FRONT=10; % 0-100 (should be low because robot automatically accelerates unti MAX_ROTATIONS is reached
+DECELERATION=3;
+MIN_DISTANCE=0.2;  %in meters
+MAX_ROTATIONS=20;
+acceleration=0.8;  % acceleration from base speed
+
+% Start program
+
 if exist('robot') ~= true
  robot = legoev3('usb');
 end
@@ -17,22 +27,18 @@ frontDriveMotor = motor(robot, 'C');
 backDriveMotor= motor(robot, 'D');
 schallsensor = sonicSensor(robot);
 
-MIN_DISTANCE=0.2;
+
 radius=56/2;
-DRIVE_SPEED_FRONT=30;
-MAX_ROTATIONS=20;
-acceleration=0.4;
+
 DRIVE_SPEED_BACK=DRIVE_SPEED_FRONT*1.6666;
 currentSpeedFront=DRIVE_SPEED_FRONT;
 currentSpeedBack=DRIVE_SPEED_BACK;
 ROTATION_DEADZONE=5;
-DECELERATION=3;
 direction=1;  %1=forward, -1 =backwards
 
 frontRotations=[];
 backRotations=[];
 frontSpeeds=[];
-backSpeeds=[];
 
 disp("waiting for robot to initialize...");
 resetRotationAngle(gyrosensor);
@@ -47,6 +53,8 @@ balanceMotor.Speed=0;
 start(balanceMotor);
 
 
+
+
 while is_running
     switch state
         case robot_states.INIT
@@ -54,9 +62,10 @@ while is_running
             balanceMotorSpeeds=[];
             backRotations=[];
             frontRotations=[];
-            backSpeeds=[];
             frontSpeeds=[];
             xs=[];
+            xSpeeds=[];
+            iSpeeds=1;
             i=1;
             tic;
             frontDriveMotor.Speed = direction*DRIVE_SPEED_FRONT;
@@ -67,13 +76,12 @@ while is_running
 
             disp("robot initialized... waiting for start command via touch sensor");
             state=robot_states.WAIT_FOR_START_COMMAND;
+            
         case robot_states.WAIT_FOR_START_COMMAND
             if(readTouch(touch)==1)
                 writeStatusLight(robot, 'green', 'solid');
                 playTone(robot, 500, 1, 10);
 
-                
-                
                 pause(1);
 
                 resetRotation(frontDriveMotor);
@@ -82,7 +90,6 @@ while is_running
                 start(backDriveMotor);
                 disp("started motors");
                 state=robot_states.DRIVING;
-                
             end
         case robot_states.DRIVING
             motorRotation = readRotation(frontDriveMotor);
@@ -97,14 +104,15 @@ while is_running
             end
         
             %start for plotting
+            xSpeeds(end+1)=iSpeeds;
             xs(end+1)=i;
             balanceMotorSpeeds(end+1)=balanceMotor.Speed;
-            frontSpeeds(end+1)=frontDriveMotor.Speed;
-            backSpeeds(end+1)=-backDriveMotor.Speed;
+            frontSpeeds(end+1)=frontDriveMotor.Speed*direction;
             
             frontRotations(end+1)=readRotation(frontDriveMotor)-sum(frontRotations);  % subtract last value because we want not the aggregated rotations
             backRotations(end+1)=(-readRotation(backDriveMotor)-sum(backRotations))/1.6666;
             
+            iSpeeds=iSpeeds+1;
             i=i+1;
             %end for plotting
         
@@ -129,6 +137,9 @@ while is_running
             while readDistance(schallsensor)< MIN_DISTANCE && (abs(frontDriveMotor.Speed)>DECELERATION && abs(backDriveMotor.Speed)>DECELERATION)
                 frontDriveMotor.Speed=sign(frontDriveMotor.Speed)* (abs(frontDriveMotor.Speed)-DECELERATION);
                 backDriveMotor.Speed=sign(backDriveMotor.Speed) * (abs(backDriveMotor.Speed)-DECELERATION);
+                frontSpeeds(end+1)=frontDriveMotor.Speed*direction;
+                xSpeeds(end+1)=iSpeeds;
+                iSpeeds=iSpeeds+1;
                 balance_regulation(gyrosensor, balanceMotor);
             end
                 frontDriveMotor.Speed=0;
@@ -158,11 +169,18 @@ while is_running
             while(abs(frontDriveMotor.Speed)>DECELERATION && abs(backDriveMotor.Speed)>DECELERATION)
                 frontDriveMotor.Speed=sign(frontDriveMotor.Speed)* (abs(frontDriveMotor.Speed)-DECELERATION);
                 backDriveMotor.Speed=sign(backDriveMotor.Speed) * (abs(backDriveMotor.Speed)-DECELERATION);
+                frontSpeeds(end+1)=frontDriveMotor.Speed*direction;
+                xSpeeds(end+1)=iSpeeds;
+                iSpeeds=iSpeeds+1;
                 balance_regulation(gyrosensor, balanceMotor);
             end
+           disp("finished deceleration");
+           
+           while balanceMotor.Speed ~= 0
+                balance_regulation(gyrosensor, balanceMotor);
+           end
 
-
-            beep(robot, 1);
+           beep(robot, 1);
 
             direction=-direction; % switch the direction front/backwards
             
@@ -192,13 +210,12 @@ while is_running
             legend("frontRotations", "backRotations");
 
             subplot(3,1,3);
-            plot(xs, frontSpeeds);
+            plot(xSpeeds, frontSpeeds);
             hold on;
             grid on;
-            plot(xs, backSpeeds);
-            legend("frontSpeeds", "backSpeeds");
+            legend("frontSpeeds");
 
-            pause(1);
+         %   pause(1);
 
             % is_running=0;
             state=robot_states.INIT;  % for now, just run the robot forever
@@ -214,7 +231,7 @@ while is_running
         is_running=0;
     end
         
-        balance_regulation(gyrosensor, balanceMotor);
+    balance_regulation(gyrosensor, balanceMotor);
 
 end
 
