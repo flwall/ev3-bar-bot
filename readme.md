@@ -18,3 +18,5 @@ Documentation: [./docs/ev3-bar-bot.md](./docs/ev3-bar-bot.md)
 Der Roboter wird auf Basis eines Lego Mindstorms EV3 Kits in Verbindung mit Matlab und dessen EV3 Zusatzkit https://de.mathworks.com/help/matlab/supportpkg/install-support-for-lego-mindstorms-ev3-hardware.html gebaut.
 
 Proportionalregler
+
+Meine Änderung
