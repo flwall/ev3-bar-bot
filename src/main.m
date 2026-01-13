@@ -4,10 +4,10 @@ clc;
 
 % CONFIG PARAMETERS
 DRIVE_SPEED_FRONT=10; % 0-100 (should be low because robot automatically accelerates unti MAX_ROTATIONS is reached
-DECELERATION=3;
+DECELERATION=2.2;
 MIN_DISTANCE=0.2;  %in meters
 MAX_ROTATIONS=20;
-acceleration=0.8;  % acceleration from base speed
+acceleration=0.8;  % acceleration from base speed;
 
 % Start program
 
@@ -67,7 +67,7 @@ while is_running
             xSpeeds=[];
             iSpeeds=1;
             i=1;
-            tic;
+
             frontDriveMotor.Speed = direction*DRIVE_SPEED_FRONT;
             backDriveMotor.Speed=-direction*DRIVE_SPEED_BACK;
             currentSpeedFront=DRIVE_SPEED_FRONT;
@@ -89,6 +89,7 @@ while is_running
                 start(frontDriveMotor);
                 start(backDriveMotor);
                 disp("started motors");
+                tic;
                 state=robot_states.DRIVING;
             end
         case robot_states.DRIVING
@@ -188,13 +189,20 @@ while is_running
             stop(frontDriveMotor);
             stop(backDriveMotor);
     
-            distance=double(distance)/double(1000);  % mm to metres
+            distance=double(distance)/double(10);  % mm to cm
             time=toc;
             velocity=distance/time;
-            msg=['The robot travelled ', num2str(distance), ' metres in ', num2str(time), ' seconds (=', num2str(velocity), ' m/s)'];
-            disp(msg);
+            msg1=['Distance: ', num2str(distance,'%.3f'),' cm'];
+            msg2=['Time: ', num2str(time,'%.3f'),' sec'];
+            msg3=['Velocity: ', num2str(velocity,'%.3f'), ' cm/s'];
+            disp(msg1), disp(msg2), disp(msg3);
             clearLCD(robot);
-            writeLCD(robot, msg, 1, 1);
+            writeLCD(robot, msg1, 7, 1);
+            writeLCD(robot, msg2, 8, 1);
+            writeLCD(robot, msg3, 9, 1);
+
+
+
 
             figure(1);
             subplot(3,1,1);
