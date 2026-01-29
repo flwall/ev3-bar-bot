@@ -4,14 +4,14 @@ clc;
 
 % CONFIG PARAMETERS
 DRIVE_SPEED_FRONT=10; % 0-100 (should be low because robot automatically accelerates unti MAX_ROTATIONS is reached
-DECELERATION=2.2;
-MIN_DISTANCE=0.2;  %in meters
+DECELERATION=2.0;
+MIN_DISTANCE=0.12;  %in meters
 MAX_ROTATIONS=10;
 acceleration=0.8;  % acceleration from base speed;
 
 % Start program
 
-if exist('robot') ~= true
+if exist('robot', 'var') ~= true
  robot = legoev3('usb');
 end
 
@@ -44,11 +44,11 @@ frontSpeeds=[];
 disp("waiting for robot to initialize...");
 resetRotationAngle(gyrosensor);
 pause(2);
-if(abs(readRotationAngle(gyrosensor))>2)
+if(abs(readRotationAngle(gyrosensor))>0)
     beep(robot, 3);
-    error("gyrosensor seems to drift!!!");                  
+    error(strcat("gyrosensor seems to drift!!! (", num2str(readRotationAngle(gyrosensor))));                  
 end
-
+      
 resetRotation(balanceMotor);
 balanceMotor.Speed=0;
 start(balanceMotor);
@@ -104,7 +104,7 @@ while is_running
         
             %start for plotting
             xs(end+1)=toc;
-            frontSpeeds(end+1)=frontDriveMotor.Speed*direction;
+            frontSpeeds(end+1)=frontDriveMotor.Speed;
             
             balanceMotorSpeeds(end+1)=balanceMotor.Speed;
             frontRotations(end+1)=readRotation(frontDriveMotor)-sum(frontRotations);  % subtract last value because we want not the aggregated rotations
@@ -112,17 +112,17 @@ while is_running
             
             %end for plotting
         
-            if frontRotations(end) < MAX_ROTATIONS
+            if abs(frontRotations(end)) < MAX_ROTATIONS
                 currentSpeedFront=double(currentSpeedFront+acceleration);
                 frontDriveMotor.Speed=direction*currentSpeedFront;
-            elseif frontRotations > MAX_ROTATIONS+ROTATION_DEADZONE    % some deadzone to avoid flipping between two states
+            elseif abs(frontRotations) > MAX_ROTATIONS+ROTATION_DEADZONE    % some deadzone to avoid flipping between two states
                 currentSpeedFront=double(currentSpeedFront-acceleration);
                 frontDriveMotor.Speed=direction*currentSpeedFront;
             end
-            if backRotations(end) < MAX_ROTATIONS*TRANSMISSION_RATIO
+            if abs(backRotations(end)) < MAX_ROTATIONS*TRANSMISSION_RATIO
                 currentSpeedBack=double(currentSpeedBack+acceleration);
                 backDriveMotor.Speed=-direction * currentSpeedBack;
-            elseif backRotations(end) > MAX_ROTATIONS*TRANSMISSION_RATIO+ROTATION_DEADZONE % some deadzone to avoid flipping between two states
+            elseif abs(backRotations(end)) > MAX_ROTATIONS*TRANSMISSION_RATIO+ROTATION_DEADZONE % some deadzone to avoid flipping between two states
                 currentSpeedBack=double(currentSpeedBack-acceleration);
                 backDriveMotor.Speed=-direction*currentSpeedBack;
             end
@@ -133,7 +133,7 @@ while is_running
             while readDistance(schallsensor)< MIN_DISTANCE && (abs(frontDriveMotor.Speed)>DECELERATION && abs(backDriveMotor.Speed)>DECELERATION)
                 frontDriveMotor.Speed=sign(frontDriveMotor.Speed)* (abs(frontDriveMotor.Speed)-DECELERATION);
                 backDriveMotor.Speed=sign(backDriveMotor.Speed) * (abs(backDriveMotor.Speed)-DECELERATION);
-                frontSpeeds(end+1)=frontDriveMotor.Speed*direction;
+                frontSpeeds(end+1)=frontDriveMotor.Speed;
                 balanceMotorSpeeds(end+1)=balanceMotor.Speed;
                 frontRotations(end+1)=readRotation(frontDriveMotor)-sum(frontRotations);  % subtract last value because we want not the aggregated rotations
                 backRotations(end+1)=(-readRotation(backDriveMotor)-sum(backRotations));
@@ -141,6 +141,12 @@ while is_running
                 xs(end+1)=toc;
                 balance_regulation(gyrosensor, balanceMotor);
             end
+                frontSpeeds(end+1)=frontDriveMotor.Speed;
+                frontRotations(end+1)=readRotation(frontDriveMotor)-sum(frontRotations);  % subtract last value because we want not the aggregated rotations
+                backRotations(end+1)=(-readRotation(backDriveMotor)-sum(backRotations));
+                balanceMotorSpeeds(end+1)=balanceMotor.Speed;
+                xs(end+1)=toc;
+                
                 frontDriveMotor.Speed=0;
                 backDriveMotor.Speed=0;
                 
@@ -168,26 +174,35 @@ while is_running
             while(abs(frontDriveMotor.Speed)>DECELERATION && abs(backDriveMotor.Speed)>DECELERATION)
                 frontDriveMotor.Speed=sign(frontDriveMotor.Speed)* (abs(frontDriveMotor.Speed)-DECELERATION);
                 backDriveMotor.Speed=sign(backDriveMotor.Speed) * (abs(backDriveMotor.Speed)-DECELERATION);
-                frontSpeeds(end+1)=frontDriveMotor.Speed*direction;
+                frontSpeeds(end+1)=frontDriveMotor.Speed;
                 balanceMotorSpeeds(end+1)=balanceMotor.Speed;
-            frontRotations(end+1)=readRotation(frontDriveMotor)-sum(frontRotations);  % subtract last value because we want not the aggregated rotations
-            backRotations(end+1)=(-readRotation(backDriveMotor)-sum(backRotations));
+                frontRotations(end+1)=readRotation(frontDriveMotor)-sum(frontRotations);  % subtract last value because we want not the aggregated rotations
+                backRotations(end+1)=(-readRotation(backDriveMotor)-sum(backRotations));
                 xs(end+1)=toc;
                 balance_regulation(gyrosensor, balanceMotor);
             end
-           disp("finished deceleration");
+            disp("stopping motors");
+            frontDriveMotor.Speed=0;
+            backDriveMotor.Speed=0;
+
+            frontSpeeds(end+1)=frontDriveMotor.Speed;
+            frontRotations(end+1)=readRotation(frontDriveMotor)-sum(frontRotations);  % subtract last value because we want not the aggregated rotations
+            backRotations(end+1)=(-readRotation(backDriveMotor)-sum(backRotations));
+            balanceMotorSpeeds(end+1)=balanceMotor.Speed;
+                
+            xs(end+1)=toc;
+            disp("finished deceleration");
            
            while balanceMotor.Speed ~= 0
                 balance_regulation(gyrosensor, balanceMotor);
            end
 
+           stop(frontDriveMotor);
+           stop(backDriveMotor);
+
            beep(robot, 1);
 
             direction=-direction; % switch the direction front/backwards
-            
-            disp("stopping motors");
-            stop(frontDriveMotor);
-            stop(backDriveMotor);
     
             distance=double(distance)/double(10);  % mm to cm
             time=toc;
@@ -201,18 +216,16 @@ while is_running
             writeLCD(robot, msg2, 8, 1);
             writeLCD(robot, msg3, 9, 1);
 
-
-
-
             figure(1);
             subplot(3,1,1);
             plot(xs, balanceMotorSpeeds);
-            title("Gyrosensor Balance");
+            title("Balancierung des Glas");
+            legend("Balancierung des Glas");
             xlabel("Zeit [s]");
             ylabel("%");
             hold on;
             grid on;
-
+            
             subplot(3,1,2);
             plot(xs, frontRotations);
             title("Motor-Rotationen");
@@ -232,7 +245,7 @@ while is_running
             grid on;
             legend("Gesamt-Geschwindigkeit");
 
-            pause(1);
+            pause(3);
 
             % is_running=0;
             state=robot_states.INIT;  % for now, just run the robot forever
